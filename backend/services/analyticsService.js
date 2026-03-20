@@ -2,13 +2,13 @@ import prisma from '../lib/prisma.js'
 
 class AnalyticsService {
   calculateScore(agent) {
-    const voteFactor = Math.min(100, agent.upvotes) * 0.4
-    const usageFactor = Math.min(100, agent.calls / 1000) * 0.3
+    const voteFactor = Math.min(100, agent.upvotes || 0) * 0.4
+    const usageFactor = Math.min(100, (agent.calls || 0) / 1000) * 0.3
 
     const revenueNum = Number(agent.revenue || '0') / 1e18
     const revenueFactor = Math.min(100, revenueNum / 100) * 0.2
 
-    const successFactor = agent.successRate * 0.1
+    const successFactor = (agent.successRate || 0) * 0.1
 
     return parseFloat((voteFactor + usageFactor + revenueFactor + successFactor).toFixed(2))
   }
@@ -74,26 +74,38 @@ class AnalyticsService {
     }, 0n)
 
     const totalRevenue = Number(totalRevenueWei) / 1e18
-
     const totalCalls = agents.reduce((s, a) => s + a.calls, 0)
-
     const avgSuccessRate = agents.length > 0
       ? agents.reduce((s, a) => s + a.successRate, 0) / agents.length
       : 0
 
     const revenueByDay = this._groupByDay(transactions, 7)
 
+    // Agent performance chart data
+    const agentPerf = agents.map(a => ({
+      name: a.name.length > 10 ? a.name.slice(0, 10) + '…' : a.name,
+      calls: a.calls,
+      revenue: parseFloat((Number(a.revenue || '0') / 1e18).toFixed(4)),
+    }))
+
+    // Activity feed from recent interactions
+    const activityFeed = recentInteractions.map(i => ({
+      text: `${i.agent?.name || 'Agent'} executed${i.callerWallet ? ` by ${i.callerWallet.slice(0, 8)}...` : ''}`,
+      time: new Date(i.createdAt).toLocaleTimeString(),
+    }))
+
     return {
-      summary: {
+      metrics: {
         totalRevenue: parseFloat(totalRevenue.toFixed(6)),
         totalCalls,
         agentCount: agents.length,
         activeAgents: agents.filter(a => a.status === 'active').length,
-        avgSuccessRate: parseFloat(avgSuccessRate.toFixed(2)),
+        successRate: parseFloat(avgSuccessRate.toFixed(2)),
       },
       agents,
-      revenueByDay,
-      recentActivity: recentInteractions,
+      revenueData: revenueByDay,
+      agentPerf,
+      activityFeed,
       globalStats,
     }
   }
@@ -140,7 +152,7 @@ class AnalyticsService {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
     const recentInteractions = await prisma.interaction.findMany({
-      where: { agentId: agent.id, createdAt: { gte: yesterday } },
+      where: { agentId: agent.agentId, createdAt: { gte: yesterday } },
       orderBy: { createdAt: 'desc' },
       select: { latency: true, status: true, createdAt: true },
     })
@@ -197,7 +209,7 @@ class AnalyticsService {
       result.push({
         day: date.toLocaleDateString('en', { weekday: 'short' }),
         date: date.toISOString().split('T')[0],
-        revenue: Number(revenueWei) / 1e18,
+        eth: parseFloat((Number(revenueWei) / 1e18).toFixed(6)),
         transactions: dayTxs.length,
       })
     }

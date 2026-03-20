@@ -1,7 +1,7 @@
 import axios from 'axios'
 import prisma from '../lib/prisma.js'
 import agentService from '../services/agentService.js'
-import contractManager from '../services/contractManager.js'
+import contractManager from '../lib/contractManager.js'
 import config from '../config/config.js'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -40,25 +40,11 @@ class Orchestrator {
     const agent = await agentService.getById(agentId)
 
     if (agent.status === 'offline' || agent.status === 'inactive') {
+      chain.delete(agentId)
       throw Object.assign(
         new Error(`Agent "${agent.name}" is ${agent.status}`),
         { status: 503 }
       )
-    }
-
-    // ✅ VERIFY ACCESS (BLOCKCHAIN)
-    if (callerWallet) {
-      const hasAccess = await contractManager.hasAccess(
-        agent.contractAgentId,
-        callerWallet
-      )
-
-      if (!hasAccess) {
-        throw Object.assign(
-          new Error('Access not purchased for this agent'),
-          { status: 402 }
-        )
-      }
     }
 
     const interactionId = uuidv4()
@@ -129,7 +115,6 @@ class Orchestrator {
       })
     }
 
-    // ✅ OFF-CHAIN METRICS ONLY (NO TOKEN CALC HERE)
     await agentService.recordExecution(agent.agentId, {
       success,
       latency,
@@ -187,8 +172,15 @@ class Orchestrator {
   }
 
   async getInteractionHistory(agentId, limit = 50) {
+    // Support both DB id and agentId string
+    const agent = await prisma.agent.findFirst({
+      where: { OR: [{ id: agentId }, { agentId }] },
+    })
+
+    if (!agent) return []
+
     return prisma.interaction.findMany({
-      where: { agentId },
+      where: { agentId: agent.agentId },
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: {

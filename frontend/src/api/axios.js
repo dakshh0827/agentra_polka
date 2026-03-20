@@ -15,15 +15,13 @@ const api = axios.create({
 // REQUEST INTERCEPTOR (WALLET + AUTH)
 // ─────────────────────────────────────────────
 api.interceptors.request.use((config) => {
-  const wallet = localStorage.getItem('wallet-address')
-  const token = localStorage.getItem('auth-token')
+  // Prefer wagmi-connected address stored in localStorage
+  const wallet =
+    localStorage.getItem('wallet-address') ||
+    localStorage.getItem('wagmi.store') // fallback
 
-  if (wallet) {
+  if (wallet && wallet.startsWith('0x')) {
     config.headers['x-wallet-address'] = wallet
-  }
-
-  if (token) {
-    config.headers['Authorization'] = `Bearer ${token}`
   }
 
   return config
@@ -41,11 +39,6 @@ api.interceptors.response.use(
       error.message
 
     console.error('API Error:', message)
-
-    // Optional: auto logout on 401
-    if (error.response?.status === 401) {
-      localStorage.removeItem('auth-token')
-    }
 
     return Promise.reject(error)
   }

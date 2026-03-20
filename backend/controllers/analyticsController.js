@@ -15,31 +15,42 @@ const getDashboard = asyncHandler(async (req, res) => {
 })
 
 const getGlobalStats = asyncHandler(async (req, res) => {
+  // Execute concurrent queries safely
   const [
     totalAgents,
     activeAgents,
-    interactionsCount,
+    totalCalls,
     transactions,
-    avgMetrics
+    agents
   ] = await prisma.$transaction([
     prisma.agent.count(),
     prisma.agent.count({ where: { status: 'active' } }),
     prisma.interaction.count(),
-    prisma.transaction.aggregate({
-      _sum: { totalAmount: true },
-      where: { status: 'confirmed' }
+    prisma.transaction.findMany({
+      where: { status: 'confirmed' },
+      select: { totalAmount: true } // totalAmount is a string
     }),
-    prisma.agent.aggregate({
-      _avg: { successRate: true }
+    prisma.agent.findMany({
+      select: { successRate: true } // successRate is a float
     })
   ])
+
+  // Calculate sum of string Wei values safely using BigInt
+  const totalRevenueWei = transactions.reduce((acc, tx) => {
+    return acc + BigInt(tx.totalAmount || "0");
+  }, 0n);
+
+  // Calculate average success rate manually
+  const avgSuccessRate = agents.length > 0
+    ? agents.reduce((acc, a) => acc + a.successRate, 0) / agents.length
+    : 100;
 
   res.json({
     totalAgents,
     activeAgents,
-    totalCalls: interactionsCount,
-    totalRevenue: transactions._sum.totalAmount || '0',
-    avgSuccessRate: avgMetrics._avg.successRate || 100
+    totalCalls,
+    totalRevenue: totalRevenueWei.toString(),
+    avgSuccessRate
   })
 })
 

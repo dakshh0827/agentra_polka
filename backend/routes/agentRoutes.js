@@ -11,14 +11,13 @@ import {
   searchAgents,
   purchaseAccess,
   upvoteAgent,
-  checkAccess
+  checkAccess,
 } from '../controllers/agentController.js'
 
 import { authMiddleware, optionalAuth } from '../middlewares/auth.js'
 import { deployLimiter } from '../middlewares/rateLimiter.js'
 
 import { getAgentMetrics } from '../controllers/analyticsController.js'
-import { getInteractions } from '../controllers/executionController.js'
 
 const router = Router()
 
@@ -28,9 +27,7 @@ const router = Router()
 
 router.get('/', optionalAuth, getAgents)
 router.get('/search', searchAgents)
-router.get('/:id', optionalAuth, getAgentById)
-router.get('/:id/metrics', getAgentMetrics)
-router.get('/:id/interactions', getInteractions)
+router.get('/:agentId/metrics', getAgentMetrics)
 
 // ─────────────────────────────────────────────
 // WEB3 ACTIONS (PROTECTED)
@@ -39,6 +36,12 @@ router.get('/:id/interactions', getInteractions)
 // Deploy agent (creates draft first)
 router.post('/deploy', authMiddleware, deployLimiter, deployAgent)
 
+// Other protected routes before /:id to avoid conflicts
+router.post('/validate-endpoint', authMiddleware, validateEndpoint)
+
+// Routes with :id param
+router.get('/:id', optionalAuth, getAgentById)
+
 // Confirm on-chain deployment
 router.post('/:id/confirm', authMiddleware, confirmDeploy)
 
@@ -46,19 +49,15 @@ router.post('/:id/confirm', authMiddleware, confirmDeploy)
 router.delete('/:id/draft', authMiddleware, cancelDraft)
 
 // Purchase access (monthly / lifetime)
-router.post('/:id/purchase', authMiddleware, purchaseAccess)
+router.post('/:agentId/purchase', authMiddleware, purchaseAccess)
 
 // Upvote agent (paid)
-router.post('/:id/upvote', authMiddleware, upvoteAgent)
+router.post('/:agentId/upvote', authMiddleware, upvoteAgent)
 
 // Check access
-router.get('/:id/access', authMiddleware, checkAccess)
+router.get('/:agentId/access', authMiddleware, checkAccess)
 
-// ─────────────────────────────────────────────
-// OTHER PROTECTED ROUTES
-// ─────────────────────────────────────────────
-
-router.post('/validate-endpoint', authMiddleware, validateEndpoint)
+// Update / Delete
 router.put('/:id', authMiddleware, updateAgent)
 router.delete('/:id', authMiddleware, deleteAgent)
 

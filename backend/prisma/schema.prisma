@@ -64,7 +64,7 @@ model User {
   walletAddress String   @unique
   nonce         String   @default(cuid())
 
-  totalRevenue  String   @default("0") // in wei
+  totalRevenue  String   @default("0")
 
   createdAt     DateTime @default(now())
   lastSeen      DateTime @default(now())
@@ -73,8 +73,6 @@ model User {
   transactions  Transaction[]
   interactions  Interaction[]
   accesses      AgentAccess[]
-
-  @@index([walletAddress])
 }
 
 //////////////////////////////////////////////////
@@ -85,9 +83,8 @@ model Agent {
   id              String        @id @default(auto()) @map("_id") @db.ObjectId
   agentId         String        @unique @default(cuid())
 
-  // On-chain mapping
-  contractAgentId Int?          // uint256 ID from contract
-  txHash          String?       // deployment tx
+  contractAgentId Int?
+  txHash          String?
 
   name            String        @unique
   description     String?
@@ -98,12 +95,10 @@ model Agent {
 
   endpoint        String
 
-  // Web3 fields
   tier            AgentTier
-  pricing         String        // monthly price in wei
+  pricing         String
   upvotes         Int           @default(0)
 
-  // Off-chain enhancements
   category        AgentCategory @default(Data)
   tags            String[]
   status          AgentStatus   @default(active)
@@ -114,7 +109,7 @@ model Agent {
   calls           Int           @default(0)
   successRate     Float         @default(100)
 
-  revenue         String        @default("0") // wei earned
+  revenue         String        @default("0")
   score           Float         @default(0)
 
   mcpSchema       Json?
@@ -134,7 +129,7 @@ model Agent {
 }
 
 //////////////////////////////////////////////////
-// ACCESS CONTROL (SUBSCRIPTIONS)
+// ACCESS CONTROL
 //////////////////////////////////////////////////
 
 model AgentAccess {
@@ -157,7 +152,7 @@ model AgentAccess {
 }
 
 //////////////////////////////////////////////////
-// TRANSACTIONS (ALL TOKEN FLOWS)
+// TRANSACTIONS
 //////////////////////////////////////////////////
 
 model Transaction {
@@ -174,9 +169,8 @@ model Transaction {
   callerWallet  String
   caller        User              @relation(fields: [callerWallet], references: [walletAddress])
 
-  ownerWallet   String?           // agent creator
+  ownerWallet   String?
 
-  // TOKEN VALUES (ALL IN WEI STRING)
   totalAmount   String
   platformFee   String?
   creatorAmount String?
@@ -190,7 +184,7 @@ model Transaction {
 }
 
 //////////////////////////////////////////////////
-// INTERACTIONS (NO TOKEN COST)
+// INTERACTIONS
 //////////////////////////////////////////////////
 
 model Interaction {
@@ -233,7 +227,7 @@ model UsageMetrics {
   calls       Int      @default(0)
   successRate Float    @default(100)
 
-  revenue     String   @default("0") // wei
+  revenue     String   @default("0")
   avgLatency  Float    @default(0)
 
   dailyCalls  Json     @default("{}")
@@ -242,11 +236,11 @@ model UsageMetrics {
 }
 
 //////////////////////////////////////////////////
-// PLATFORM CONFIG (OPTIONAL BUT IMPORTANT)
+// PLATFORM CONFIG
 //////////////////////////////////////////////////
 
 model PlatformConfig {
-  id               String @id @default("config")
+  id               String   @id @default("config") @map("_id")
 
   feeCollector     String
 
@@ -262,13 +256,13 @@ model PlatformConfig {
 //////////////////////////////////////////////////
 
 model GlobalStats {
-  id           String   @id @default("global")
+  id           String   @id @default("global") @map("_id")
 
   totalAgents  Int      @default(0)
   activeAgents Int      @default(0)
 
   totalCalls   Int      @default(0)
-  totalRevenue String   @default("0") // wei
+  totalRevenue String   @default("0")
 
   updatedAt    DateTime @updatedAt
 }

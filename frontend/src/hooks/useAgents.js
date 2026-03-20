@@ -10,15 +10,12 @@ export function useAgents(params = {}) {
       setLoading(true)
       try {
         const res = await agentsAPI.getAll(params)
-
-        // Backend now returns consistent structure
-        const agentsData = res?.data?.agents || []
-
-        setAgents(agentsData)
+        // Backend returns { agents: [...], total, page, pages, limit }
+        const agentsData = res?.data?.agents || res?.data || []
+        setAgents(Array.isArray(agentsData) ? agentsData : [])
       } catch (err) {
+        console.error('useAgents error:', err)
         setError(err?.response?.data?.error || err.message)
-
-        // fallback mock (already converted to new schema shape)
         setAgents(MOCK_AGENTS)
       } finally {
         setLoading(false)
@@ -26,95 +23,112 @@ export function useAgents(params = {}) {
     }
 
     fetchAgents()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(params)])
 
   return { agents, isLoading, error }
 }
 
-// ✅ Updated mock data (aligned with new Prisma schema)
+// ✅ Mock data aligned with Prisma schema
 export const MOCK_AGENTS = [
   {
-    id: '1',
-    agentId: 'agent_1',
+    id: 'mock1',
+    agentId: 'AGT-MOCK001',
     name: 'DataSynth-7',
-    description: 'Advanced data synthesis and pattern recognition agent.',
+    description: 'Advanced data synthesis and pattern recognition agent with neural processing capabilities.',
     metadataUri: '',
     endpoint: 'https://api.datasynth.ai',
-
-    ownerWallet: '0xABCDEF1234567890',
-
+    ownerWallet: '0xabcdef1234567890abcdef1234567890abcdef12',
     tier: 'Standard',
-    pricing: '50000000000000000', // wei (0.05 AGT equivalent)
+    pricing: '50000000000000000',
     upvotes: 12,
-
     category: 'Analysis',
     tags: ['data', 'analysis', 'ml'],
     status: 'active',
-
     rating: 4.8,
-    ratingCount: 120,
-
+    ratingCount: 312,
     calls: 12847,
     successRate: 99.2,
-
     revenue: '642000000000000000000',
-
+    score: 87.4,
+    contractAgentId: null,
+    isVerified: false,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
   {
-    id: '2',
-    agentId: 'agent_2',
+    id: 'mock2',
+    agentId: 'AGT-MOCK002',
     name: 'CodeForge-X',
-    description: 'Autonomous code generation and optimization agent.',
+    description: 'Autonomous code generation, review and optimization agent. Supports 40+ languages.',
     metadataUri: '',
     endpoint: 'https://api.codeforge.dev',
-
-    ownerWallet: '0xDEF0123456789ABC',
-
+    ownerWallet: '0xdef0123456789abcdef0123456789abcdef01234',
     tier: 'Professional',
     pricing: '80000000000000000',
     upvotes: 30,
-
     category: 'Development',
     tags: ['code', 'dev', 'automation'],
     status: 'active',
-
     rating: 4.9,
-    ratingCount: 200,
-
+    ratingCount: 891,
     calls: 28341,
     successRate: 97.8,
-
     revenue: '2267000000000000000000',
-
+    score: 94.1,
+    contractAgentId: null,
+    isVerified: false,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
   {
-    id: '3',
-    agentId: 'agent_3',
+    id: 'mock3',
+    agentId: 'AGT-MOCK003',
     name: 'NeuralVault',
-    description: 'Smart contract auditing and threat detection agent.',
+    description: 'On-chain security analysis, smart contract auditing, and threat detection agent.',
     metadataUri: '',
     endpoint: 'https://api.neuralvault.io',
-
-    ownerWallet: '0x9876543210ABCDEF',
-
+    ownerWallet: '0x9876543210abcdef9876543210abcdef98765432',
     tier: 'Enterprise',
     pricing: '120000000000000000',
     upvotes: 18,
-
     category: 'Security',
     tags: ['security', 'audit', 'web3'],
     status: 'active',
-
     rating: 4.7,
-    ratingCount: 95,
-
+    ratingCount: 204,
     calls: 5621,
     successRate: 98.5,
-
     revenue: '675000000000000000000',
-
+    score: 82.7,
+    contractAgentId: null,
+    isVerified: false,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  {
+    id: 'mock4',
+    agentId: 'AGT-MOCK004',
+    name: 'ChainMind',
+    description: 'Autonomous DeFi strategy agent — yield optimization, liquidity management, risk assessment.',
+    metadataUri: '',
+    endpoint: 'https://api.chainmind.finance',
+    ownerWallet: '0x9876543210abcdef9876543210abcdef98765432',
+    tier: 'Enterprise',
+    pricing: '150000000000000000',
+    upvotes: 45,
+    category: 'Web3',
+    tags: ['defi', 'yield', 'web3'],
+    status: 'active',
+    rating: 4.9,
+    ratingCount: 389,
+    calls: 8902,
+    successRate: 98.1,
+    revenue: '1335000000000000000000',
+    score: 96.8,
+    contractAgentId: null,
+    isVerified: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   },
 ]

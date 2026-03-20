@@ -26,15 +26,39 @@ const executeAgent = asyncHandler(async (req, res) => {
   const { id } = req.params
   const callerWallet = req.walletAddress
 
+  // FIXED: Safely query the correct ID field based on format
+  const isObjectId = /^[a-f\d]{24}$/i.test(id)
   const agent = await prisma.agent.findFirst({
-    where: { OR: [{ id }, { agentId: id }] },
+    where: isObjectId ? { id } : { agentId: id },
   })
 
   if (!agent) return res.status(404).json({ error: 'Agent not found' })
 
-  const hasAccess = await contractManager.hasAccess(agent.contractAgentId, callerWallet)
-  if (!hasAccess) {
-    return res.status(403).json({ error: 'Access not purchased' })
+  // Owner always has access
+  if (agent.ownerWallet !== callerWallet) {
+    // Check DB access
+    const dbAccess = await prisma.agentAccess.findUnique({
+      where: {
+        agentId_userWallet: {
+          agentId: agent.agentId,
+          userWallet: callerWallet,
+        },
+      },
+    })
+
+    const hasDbAccess = dbAccess && (dbAccess.isLifetime || dbAccess.expiresAt > new Date())
+
+    if (!hasDbAccess) {
+      // For blockchain agents, check on-chain
+      if (agent.contractAgentId) {
+        const onChainAccess = await contractManager.hasAccess(agent.contractAgentId, callerWallet)
+        if (!onChainAccess) {
+          return res.status(403).json({ error: 'Access not purchased' })
+        }
+      } else {
+        return res.status(403).json({ error: 'Access not purchased' })
+      }
+    }
   }
 
   const result = await orchestrator.executeAgent(agent.agentId, task, callerWallet)
@@ -63,7 +87,8 @@ const composeAgents = asyncHandler(async (req, res) => {
 
       if (!agent) continue
 
-      const hasAccess = await contractManager.hasAccess(agent.contractAgentId, callerWallet)
+      // Check access
+      const hasAccess = await _checkAgentAccess(agent, callerWallet)
       if (!hasAccess) continue
 
       const task = context
@@ -91,7 +116,7 @@ const composeAgents = asyncHandler(async (req, res) => {
 
         if (!agent) return null
 
-        const hasAccess = await contractManager.hasAccess(agent.contractAgentId, callerWallet)
+        const hasAccess = await _checkAgentAccess(agent, callerWallet)
         if (!hasAccess) return null
 
         return orchestrator.executeAgent(agent.agentId, agentInput.task, callerWallet, {
@@ -110,96 +135,27 @@ const composeAgents = asyncHandler(async (req, res) => {
   })
 })
 
-/**
- * POST /agents/:id/purchase
- */
-const purchaseAccess = asyncHandler(async (req, res) => {
-  const { isLifetime } = req.body
-  const { id } = req.params
-  const callerWallet = req.walletAddress
+// Internal helper
+async function _checkAgentAccess(agent, callerWallet) {
+  if (agent.ownerWallet === callerWallet) return true
 
-  const agent = await prisma.agent.findFirst({
-    where: { OR: [{ id }, { agentId: id }] },
-  })
-
-  if (!agent) return res.status(404).json({ error: 'Agent not found' })
-
-  const tx = await contractManager.purchaseAccess(
-    agent.contractAgentId,
-    isLifetime,
-    agent.pricing
-  )
-
-  if (!tx.success) {
-    return res.status(400).json({ error: tx.error })
-  }
-
-  const totalCost = isLifetime
-    ? (BigInt(agent.pricing) * 12n).toString()
-    : agent.pricing
-
-  const platformFee = (BigInt(totalCost) * 20n / 100n).toString()
-  const creatorAmount = (BigInt(totalCost) - BigInt(platformFee)).toString()
-
-  await prisma.transaction.create({
-    data: {
-      txHash: tx.txHash,
-      type: 'purchase_access',
-      status: 'confirmed',
-      agentId: agent.agentId,
-      callerWallet,
-      ownerWallet: agent.ownerWallet,
-      totalAmount: totalCost,
-      platformFee,
-      creatorAmount,
+  const dbAccess = await prisma.agentAccess.findUnique({
+    where: {
+      agentId_userWallet: {
+        agentId: agent.agentId,
+        userWallet: callerWallet,
+      },
     },
   })
 
-  res.json({ success: true, txHash: tx.txHash })
-})
+  if (dbAccess && (dbAccess.isLifetime || dbAccess.expiresAt > new Date())) return true
 
-/**
- * POST /agents/:id/upvote
- */
-const upvoteAgent = asyncHandler(async (req, res) => {
-  const { id } = req.params
-  const voterWallet = req.walletAddress
-
-  const agent = await prisma.agent.findFirst({
-    where: { OR: [{ id }, { agentId: id }] },
-  })
-
-  if (!agent) return res.status(404).json({ error: 'Agent not found' })
-
-  if (agent.ownerWallet === voterWallet) {
-    return res.status(400).json({ error: 'Cannot upvote your own agent' })
+  if (agent.contractAgentId) {
+    return contractManager.hasAccess(agent.contractAgentId, callerWallet)
   }
 
-  const tx = await contractManager.upvote(
-    agent.contractAgentId,
-    config.token.upvoteCostWei
-  )
-
-  if (!tx.success) {
-    return res.status(400).json({ error: tx.error })
-  }
-
-  await prisma.transaction.create({
-    data: {
-      txHash: tx.txHash,
-      type: 'upvote',
-      status: 'confirmed',
-      agentId: agent.agentId,
-      callerWallet: voterWallet,
-      ownerWallet: agent.ownerWallet,
-      totalAmount: config.token.upvoteCostWei,
-      creatorAmount: config.token.upvoteCostWei,
-      platformFee: '0',
-    },
-  })
-
-  res.json({ success: true, txHash: tx.txHash })
-})
+  return false
+}
 
 /**
  * GET /agents/:id/interactions
@@ -208,14 +164,13 @@ const getInteractions = asyncHandler(async (req, res) => {
   const { id } = req.params
   const limit = Math.min(parseInt(req.query.limit) || 50, 200)
 
-  const history = await orchestrator.getInteractionHistory(id, limit)
+  // FIXED: Passed `limit` inside an options object so Orchestrator can destructure it properly
+  const history = await orchestrator.getInteractionHistory(id, { limit })
   res.json(history)
 })
 
 export {
   executeAgent,
   composeAgents,
-  purchaseAccess,
-  upvoteAgent,
-  getInteractions
+  getInteractions,
 }

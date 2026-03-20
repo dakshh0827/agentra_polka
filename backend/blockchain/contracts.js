@@ -42,7 +42,7 @@ class ContractManager {
     if (this._initialized) return
 
     if (!config.blockchain.rpcUrl) {
-      console.warn('[CONTRACTS] Mock mode enabled')
+      console.warn('[CONTRACTS] Mock mode enabled — no RPC URL configured')
       this._mockMode = true
       this._initialized = true
       return
@@ -59,6 +59,13 @@ class ContractManager {
       const runner = this.signer || this.provider
 
       const { agentra, token } = config.blockchain.contracts
+
+      if (!agentra || !token) {
+        console.warn('[CONTRACTS] Contract addresses not configured — mock mode enabled')
+        this._mockMode = true
+        this._initialized = true
+        return
+      }
 
       this.agentra = new ethers.Contract(agentra, AGENTRA_ABI, runner)
       this.token = new ethers.Contract(token, ERC20_ABI, runner)
@@ -77,6 +84,27 @@ class ContractManager {
 
   get isMock() {
     return this._mockMode
+  }
+
+  // ─────────────────────────────────────────────
+  // NETWORK INFO (used by health check)
+  // ─────────────────────────────────────────────
+
+  async getNetworkInfo() {
+    if (this._mockMode || !this.provider) {
+      return { mock: true, rpcUrl: config.blockchain.rpcUrl || 'none' }
+    }
+
+    try {
+      const network = await this.provider.getNetwork()
+      return {
+        chainId: Number(network.chainId),
+        name: network.name,
+        rpcUrl: config.blockchain.rpcUrl,
+      }
+    } catch (err) {
+      return { error: err.message }
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -104,7 +132,7 @@ class ContractManager {
 
   async deployAgent(tier, monthlyPriceWei, metadataURI) {
     if (this._mockMode) {
-      return { success: true, txHash: `0xmock_${Date.now()}` }
+      return { success: true, txHash: `0xmock_deploy_${Date.now()}` }
     }
 
     try {
@@ -131,7 +159,7 @@ class ContractManager {
 
   async purchaseAccess(agentId, isLifetime, monthlyPriceWei) {
     if (this._mockMode) {
-      return { success: true, txHash: `0xmock_${Date.now()}` }
+      return { success: true, txHash: `0xmock_purchase_${Date.now()}` }
     }
 
     try {
@@ -159,7 +187,7 @@ class ContractManager {
 
   async upvote(agentId, upvoteCostWei) {
     if (this._mockMode) {
-      return { success: true, txHash: `0xmock_${Date.now()}` }
+      return { success: true, txHash: `0xmock_upvote_${Date.now()}` }
     }
 
     try {
@@ -227,10 +255,11 @@ class ContractManager {
   // ─────────────────────────────────────────────
 
   async getListingFee(tier) {
-    // mirror contract values
+    // mirror contract values: Standard=50, Professional=150, Enterprise=500 AGT
     if (tier === 0) return ethers.parseEther('50')
     if (tier === 1) return ethers.parseEther('150')
     if (tier === 2) return ethers.parseEther('500')
+    return ethers.parseEther('50') // default to standard
   }
 
   // ─────────────────────────────────────────────
@@ -297,53 +326,58 @@ class ContractManager {
     // 🎯 Agent Deployed
     this.onAgentDeployed(async (event) => {
       console.log('[EVENT] AgentDeployed:', event.agentId)
-
-      await prisma.agent.updateMany({
-        where: { contractAgentId: event.agentId },
-        data: {
-          status: 'active'
-        }
-      })
+      try {
+        await prisma.agent.updateMany({
+          where: { contractAgentId: event.agentId },
+          data: { status: 'active' }
+        })
+      } catch (err) {
+        console.error('[EVENT] AgentDeployed DB error:', err.message)
+      }
     })
 
     // 💰 Access Purchased
     this.onAccessPurchased(async (event) => {
       console.log('[EVENT] AccessPurchased:', event.agentId)
-
-      await prisma.agentAccess.upsert({
-        where: {
-          agentId_userWallet: {
+      try {
+        await prisma.agentAccess.upsert({
+          where: {
+            agentId_userWallet: {
+              agentId: String(event.agentId),
+              userWallet: event.buyer
+            }
+          },
+          update: {
+            isLifetime: event.isLifetime,
+            expiresAt: event.isLifetime
+              ? new Date('9999-12-31')
+              : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          },
+          create: {
             agentId: String(event.agentId),
-            userWallet: event.buyer
+            userWallet: event.buyer,
+            isLifetime: event.isLifetime,
+            expiresAt: event.isLifetime
+              ? new Date('9999-12-31')
+              : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
           }
-        },
-        update: {
-          isLifetime: event.isLifetime,
-          expiresAt: event.isLifetime
-            ? new Date('9999-12-31')
-            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-        },
-        create: {
-          agentId: String(event.agentId),
-          userWallet: event.buyer,
-          isLifetime: event.isLifetime,
-          expiresAt: event.isLifetime
-            ? new Date('9999-12-31')
-            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-        }
-      })
+        })
+      } catch (err) {
+        console.error('[EVENT] AccessPurchased DB error:', err.message)
+      }
     })
 
     // 👍 Upvote
     this.onAgentUpvoted(async (event) => {
       console.log('[EVENT] Upvote:', event.agentId)
-
-      await prisma.agent.updateMany({
-        where: { contractAgentId: event.agentId },
-        data: {
-          upvotes: { increment: 1 }
-        }
-      })
+      try {
+        await prisma.agent.updateMany({
+          where: { contractAgentId: event.agentId },
+          data: { upvotes: { increment: 1 } }
+        })
+      } catch (err) {
+        console.error('[EVENT] AgentUpvoted DB error:', err.message)
+      }
     })
 
     console.log('[CONTRACTS] ✅ Event listeners running')

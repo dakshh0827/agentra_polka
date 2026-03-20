@@ -18,7 +18,7 @@
   --color-border-bright: #282833;
 
   /* Purple — ACCENT ONLY, used sparingly */
-  --color-purple-core: #7c3aed;
+  --color-purple-core: #8b5cf6;
   --color-purple-bright: #a855f7;
   --color-purple-pale: #c084fc;
   --color-purple-dim: #3b1f6b;
@@ -33,8 +33,8 @@
   /* Text — cool white/grey, not purple-tinted */
   --color-text-primary: #e8e8f0;
   --color-text-secondary: #9090a8;
-  --color-text-muted: #505060;
-  --color-text-dim: #303038;
+  --color-text-muted: #828293;
+  --color-text-dim: #9999a7;
 
   /* Status */
   --color-success: #34d399;
@@ -130,7 +130,7 @@
   ::-webkit-scrollbar { width: 3px; height: 3px; }
   ::-webkit-scrollbar-track { background: #000; }
   ::-webkit-scrollbar-thumb { background: #2a1a4a; border-radius: 2px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--color-purple-core); }
+  ::-webkit-scrollbar-thumb:hover { background: #8b5cf6; }
 
   ::selection { background: rgba(124,58,237,0.35); color: #fff; }
 }
@@ -173,7 +173,7 @@
     border: 1px solid var(--color-border);
   }
 
-  /* Landing-specific glass — slightly more transparent for elegance */
+  /* Landing-specific glass */
   .glass-card-landing {
     background: rgba(10, 10, 18, 0.6);
     backdrop-filter: blur(20px);
@@ -189,18 +189,18 @@
     transform: translateY(-2px);
   }
 
-  /* Glow text — subtle, only on key headings */
+  /* Headings: Exclusively using #8b5cf6 */
   .glow-text {
-    text-shadow: 0 0 30px rgba(168,85,247,0.4);
+    color: #8b5cf6;
   }
 
   .glow-text-strong {
-    text-shadow: 0 0 20px rgba(168,85,247,0.6), 0 0 40px rgba(124,58,237,0.3);
+    color: #8b5cf6;
   }
 
   /* Glow border — purple accent for selected/active elements */
   .glow-border {
-    border-color: var(--color-purple-core) !important;
+    border-color: #8b5cf6 !important;
     box-shadow: 0 0 12px rgba(124,58,237,0.2), inset 0 0 12px rgba(124,58,237,0.03);
   }
 
@@ -221,7 +221,7 @@
   .terminal-cursor::after {
     content: '█';
     animation: blink 1s step-end infinite;
-    color: var(--color-purple-bright);
+    color: #8b5cf6;
   }
 
   .fade-up {
@@ -240,7 +240,7 @@
   .nav-link-active {
     background: rgba(124,58,237,0.10);
     border: 1px solid rgba(124,58,237,0.28);
-    color: var(--color-purple-bright);
+    color: #8b5cf6;
   }
 
   .nav-link-idle {
@@ -272,8 +272,8 @@
 
   /* Buttons */
   .btn-primary {
-    background: var(--color-purple-core);
-    border: 1px solid rgba(168,85,247,0.5);
+    background: #8b5cf6;
+    border: 1px solid rgba(124,58,237,0.5);
     color: #fff;
     font-family: var(--font-mono);
     font-size: 0.75rem;
@@ -307,8 +307,8 @@
   /* Landing CTA buttons */
   .btn-glow {
     position: relative;
-    background: linear-gradient(135deg, var(--color-purple-core), #9333ea);
-    border: 1px solid rgba(168,85,247,0.5);
+    background: linear-gradient(135deg, #8b5cf6, #9333ea);
+    border: 1px solid rgba(124,58,237,0.5);
     color: #fff;
     font-family: var(--font-mono);
     font-size: 0.8rem;
@@ -322,7 +322,7 @@
     position: absolute;
     inset: -1px;
     border-radius: inherit;
-    background: linear-gradient(135deg, var(--color-purple-core), #9333ea, var(--color-accent-fuchsia));
+    background: linear-gradient(135deg, #8b5cf6, #9333ea, var(--color-accent-fuchsia));
     z-index: -1;
     opacity: 0;
     transition: opacity 0.3s ease;
@@ -348,7 +348,7 @@
   }
 
   .btn-outline-glow:hover {
-    border-color: var(--color-purple-bright);
+    border-color: #8b5cf6;
     background: rgba(124,58,237,0.08);
     box-shadow: var(--shadow-glow-soft);
     transform: translateY(-1px);
@@ -364,7 +364,7 @@
 
   .input-field:focus {
     outline: none;
-    border-color: var(--color-purple-core);
+    border-color: #8b5cf6;
     box-shadow: 0 0 0 2px rgba(124,58,237,0.10);
   }
 
@@ -372,18 +372,14 @@
     color: var(--color-text-dim);
   }
 
-  /* Section divider line */
   .section-divider {
     height: 1px;
     background: linear-gradient(90deg, transparent, rgba(124,58,237,0.2), transparent);
   }
 
-  /* Gradient text utility */
+  /* Solid text utility for Headings exclusively using #8b5cf6 */
   .gradient-text-purple {
-    background: linear-gradient(135deg, var(--color-purple-pale), var(--color-purple-bright), var(--color-accent-fuchsia));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: #8b5cf6;
   }
 }
 
@@ -432,5 +428,5 @@
 
 @keyframes blinkCursor {
   0%, 100% { border-right-color: transparent; }
-  50%      { border-right-color: var(--color-purple-bright); }
+  50%      { border-right-color: #8b5cf6; }
 }

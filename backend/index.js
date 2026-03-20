@@ -52,7 +52,7 @@ app.get('/health', async (req, res) => {
   const network = await contractManager.getNetworkInfo?.()
   res.json({
     status: 'ok',
-    service: 'neural-market-api',
+    service: 'agentra-api',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
     env: config.nodeEnv,
@@ -86,7 +86,7 @@ const start = async () => {
     }
 
     app.listen(config.port, () => {
-      console.log(`\n🚀 Neural Market API running on port ${config.port}`)
+      console.log(`\n🚀 Agentra API running on port ${config.port}`)
       console.log(`   Environment  : ${config.nodeEnv}`)
       console.log(`   Database     : Prisma / MongoDB`)
       console.log(`   Blockchain   : ${contractManager.isMock ? 'Mock Mode' : 'Connected'}`)

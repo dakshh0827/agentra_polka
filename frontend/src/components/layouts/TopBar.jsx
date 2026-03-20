@@ -3,12 +3,11 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Radio, Bell, ChevronDown, Repeat } from 'lucide-react'
 import { useWeb3Modal } from '@web3modal/wagmi/react'
-import { useAccount, useDisconnect } from 'wagmi'
+import { useAccount, useDisconnect, useReadContract } from 'wagmi'
+import { formatUnits } from 'viem'
 import NeonButton from '../ui/NeonButton'
 import { analyticsAPI } from '../../api/analytics'
-import { formatUnits } from 'viem'
-import { useReadContract } from 'wagmi'
-import config from '../../config'
+import { CHAIN_CONFIG } from '../../config/chains.config'
 
 // ERC20 ABI (minimal)
 const ERC20_ABI = [
@@ -28,14 +27,28 @@ export default function TopBar() {
 
   const [stats, setStats] = useState(null)
 
-  // AGT token balance (NOT native ETH)
+  // Sync connected wallet to localStorage so axios interceptor picks it up
+  useEffect(() => {
+    if (address) {
+      localStorage.setItem('wallet-address', address.toLowerCase())
+    } else {
+      localStorage.removeItem('wallet-address')
+    }
+  }, [address])
+
+  // Resolve AGT token address from current chain
+  const currentNetwork = chain?.id ? CHAIN_CONFIG[chain.id] : null
+  const tokenAddress = currentNetwork?.contracts?.AgentToken?.address
+  const tokenAbi = currentNetwork?.contracts?.AgentToken?.abi || ERC20_ABI
+
+  // AGT token balance
   const { data: tokenBalance } = useReadContract({
-    address: config.contracts.token,
-    abi: ERC20_ABI,
+    address: tokenAddress,
+    abi: tokenAbi,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
     query: {
-      enabled: !!address,
+      enabled: !!address && !!tokenAddress,
     },
   })
 
@@ -52,7 +65,7 @@ export default function TopBar() {
       <div className="flex items-center gap-4">
         <Link to="/" className="lg:hidden flex items-center gap-2 shrink-0">
           <div className="w-7 h-7 rounded-md bg-[var(--color-nebula)] border border-[var(--color-border-bright)] flex items-center justify-center">
-            <img src="/logo.png" className="w-7 h-7 object-contain" />
+            <img src="/logo.png" className="w-7 h-7 object-contain" alt="Agentra" />
           </div>
           <span className="font-display font-bold text-xs text-[var(--color-text-primary)] tracking-[0.15em]">
             AGENTRA
@@ -78,7 +91,7 @@ export default function TopBar() {
           className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--color-nebula-deep)] border border-[var(--color-border)] text-[10px] font-mono text-[var(--color-text-dim)]"
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-purple-bright)] pulse-dot" />
-          AGENTS: {stats?.activeAgents || 0} ONLINE
+          AGENTS: {stats?.activeAgents ?? 0} ONLINE
         </motion.div>
 
         <Bell
@@ -111,7 +124,7 @@ export default function TopBar() {
               </span>
 
               {/* AGT Balance */}
-              {tokenBalance && (
+              {tokenBalance !== undefined && (
                 <span className="hidden sm:inline text-[10px] font-mono text-[var(--color-text-muted)]">
                   {Number(formatUnits(tokenBalance, 18)).toFixed(2)} AGT
                 </span>

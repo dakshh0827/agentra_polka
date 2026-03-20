@@ -31,11 +31,12 @@ const config = {
 
   token: {
     decimals: 18,
-    upvoteCostWei: process.env.UPVOTE_COST_WEI || '1000000000000000000',
+    upvoteCostWei: process.env.UPVOTE_COST_WEI || '1000000000000000000', // 1 AGT
     listingFeesWei: {
-      standard: process.env.LISTING_FEE_STANDARD || '50000000000000000000',
-      professional: process.env.LISTING_FEE_PRO || '150000000000000000000',
-      enterprise: process.env.LISTING_FEE_ENTERPRISE || '500000000000000000000',
+      // Keyed by lowercase tier name for easy lookup
+      standard: process.env.LISTING_FEE_STANDARD || '50000000000000000000',       // 50 AGT
+      professional: process.env.LISTING_FEE_PRO || '150000000000000000000',        // 150 AGT
+      enterprise: process.env.LISTING_FEE_ENTERPRISE || '500000000000000000000',   // 500 AGT
     },
   },
 

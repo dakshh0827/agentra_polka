@@ -10,7 +10,7 @@ class AgentService {
       endpoint = '',
       category,
       tags = [],
-      pricing, // should be WEI string
+      pricing,
       mcpSchema,
       tier,
       metadataUri,
@@ -44,7 +44,7 @@ class AgentService {
     await prisma.globalStats.upsert({
       where: { id: 'global' },
       update: { totalAgents: { increment: 1 } },
-      create: { id: 'global', totalAgents: 1, activeAgents: 0 },
+      create: { id: 'global', totalAgents: 1, activeAgents: 0, totalCalls: 0, totalRevenue: '0' },
     })
 
     return agent
@@ -56,9 +56,10 @@ class AgentService {
       data: { status: 'active' },
     })
 
-    await prisma.globalStats.update({
+    await prisma.globalStats.upsert({
       where: { id: 'global' },
-      data: { activeAgents: { increment: 1 } },
+      update: { activeAgents: { increment: 1 } },
+      create: { id: 'global', totalAgents: 1, activeAgents: 1, totalCalls: 0, totalRevenue: '0' },
     })
   }
 
@@ -146,9 +147,7 @@ class AgentService {
     const isObjectId = /^[a-f\d]{24}$/i.test(id)
 
     const agent = await prisma.agent.findFirst({
-      where: isObjectId
-        ? { OR: [{ id }, { agentId: id }] }
-        : { agentId: id },
+      where: isObjectId ? { id } : { agentId: id },
       include: {
         metrics: true,
         _count: { select: { interactions: true } },
@@ -160,8 +159,9 @@ class AgentService {
   }
 
   async updateAgent(id, updates, wallet) {
+    const isObjectId = /^[a-f\d]{24}$/i.test(id)
     const agent = await prisma.agent.findFirst({
-      where: { OR: [{ id }, { agentId: id }] },
+      where: isObjectId ? { id } : { agentId: id },
     })
 
     if (!agent) throw Object.assign(new Error('Agent not found'), { status: 404 })
@@ -182,12 +182,25 @@ class AgentService {
   }
 
   async deactivateAgent(id, wallet) {
-    return this.updateAgent(id, { status: 'inactive' }, wallet)
+    const isObjectId = /^[a-f\d]{24}$/i.test(id)
+    const agent = await prisma.agent.findFirst({
+      where: isObjectId ? { id } : { agentId: id },
+    })
+
+    if (!agent) throw Object.assign(new Error('Agent not found'), { status: 404 })
+    if (agent.ownerWallet !== wallet.toLowerCase()) {
+      throw Object.assign(new Error('Not authorized'), { status: 403 })
+    }
+
+    return prisma.agent.update({
+      where: { id: agent.id },
+      data: { status: 'inactive' },
+    })
   }
 
   async recordExecution(agentId, { success, latency }) {
     await prisma.$transaction(async (tx) => {
-      const agent = await tx.agent.findUnique({ where: { id: agentId } })
+      const agent = await tx.agent.findUnique({ where: { agentId } })
       if (!agent) return
 
       const newCalls = agent.calls + 1
@@ -196,14 +209,14 @@ class AgentService {
       const newSuccessRate = parseFloat(((newSuccessCount / newCalls) * 100).toFixed(2))
 
       await tx.agent.update({
-        where: { id: agentId },
+        where: { id: agent.id },
         data: {
           calls: { increment: 1 },
           successRate: newSuccessRate,
         },
       })
 
-      const metrics = await tx.usageMetrics.findUnique({ where: { agentId } })
+      const metrics = await tx.usageMetrics.findUnique({ where: { agentId: agent.id } })
 
       if (metrics) {
         const newAvgLatency =
@@ -212,7 +225,7 @@ class AgentService {
             : Math.round((metrics.avgLatency * metrics.calls + (latency || 0)) / (metrics.calls + 1))
 
         await tx.usageMetrics.update({
-          where: { agentId },
+          where: { agentId: agent.id },
           data: {
             calls: { increment: 1 },
             successRate: newSuccessRate,
@@ -221,11 +234,10 @@ class AgentService {
         })
       }
 
-      await tx.globalStats.update({
+      await tx.globalStats.upsert({
         where: { id: 'global' },
-        data: {
-          totalCalls: { increment: 1 },
-        },
+        update: { totalCalls: { increment: 1 } },
+        create: { id: 'global', totalAgents: 0, activeAgents: 0, totalCalls: 1, totalRevenue: '0' },
       })
     })
   }

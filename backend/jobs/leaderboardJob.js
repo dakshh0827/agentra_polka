@@ -2,7 +2,7 @@ import cron from 'node-cron'
 import analyticsService from '../services/analyticsService.js'
 import config from '../config/config.js'
 import prisma from '../lib/prisma.js'
-import contractManager from '../blockchain/contractManager.js'
+import contractManager from '../lib/contractManager.js'
 
 let isRunning = false
 
@@ -52,6 +52,7 @@ const startLeaderboardJob = () => {
 
   cron.schedule(schedule, runLeaderboardUpdate)
 
+  // Run once shortly after startup
   setTimeout(runLeaderboardUpdate, 3000)
 }
 

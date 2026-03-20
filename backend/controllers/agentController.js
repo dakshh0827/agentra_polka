@@ -16,6 +16,8 @@ const deploySchema = z.object({
   tier: z.enum(['Standard', 'Professional', 'Enterprise']),
   endpoint: z.string().url(),
   mcpSchema: z.record(z.string(), z.unknown()).optional(),
+  deployMode: z.enum(['database', 'blockchain']).optional(),
+  status: z.string().optional(),
 })
 
 const updateSchema = z.object({
@@ -64,6 +66,39 @@ const deployAgent = asyncHandler(async (req, res) => {
   const data = deploySchema.parse(req.body)
 
   const metadataURI = `https://api.agentra.io/metadata/temp-${Date.now()}`
+  const isBlockchain = data.deployMode === 'blockchain'
+
+  // For database-only deploys, skip the contract call
+  if (!isBlockchain) {
+    const agent = await prisma.agent.create({
+      data: {
+        name: data.name,
+        description: data.description,
+        metadataUri: metadataURI,
+        ownerWallet: req.walletAddress,
+        endpoint: data.endpoint,
+        tier: data.tier,
+        pricing: data.pricing,
+        category: data.category,
+        tags: data.tags || [],
+        mcpSchema: data.mcpSchema || null,
+        status: 'active',
+        txHash: null,
+      },
+    })
+
+    await prisma.usageMetrics.create({
+      data: { agentId: agent.id },
+    })
+
+    await prisma.globalStats.upsert({
+      where: { id: 'global' },
+      update: { totalAgents: { increment: 1 }, activeAgents: { increment: 1 } },
+      create: { id: 'global', totalAgents: 1, activeAgents: 1, totalCalls: 0, totalRevenue: '0' },
+    })
+
+    return res.status(201).json(agent)
+  }
 
   // 1. Call smart contract
   const tx = await contractManager.deployAgent(
@@ -88,12 +123,24 @@ const deployAgent = asyncHandler(async (req, res) => {
       pricing: data.pricing,
       category: data.category,
       tags: data.tags || [],
+      mcpSchema: data.mcpSchema || null,
       status: 'draft',
       txHash: tx.txHash,
     },
   })
 
-  // 3. Log transaction
+  await prisma.usageMetrics.create({
+    data: { agentId: agent.id },
+  })
+
+  await prisma.globalStats.upsert({
+    where: { id: 'global' },
+    update: { totalAgents: { increment: 1 } },
+    create: { id: 'global', totalAgents: 1, activeAgents: 0, totalCalls: 0, totalRevenue: '0' },
+  })
+
+  // 3. Log transaction (listing fee — full amount to platform)
+  const listingFeeWei = config.token.listingFeesWei[data.tier.toLowerCase()] || config.token.listingFeesWei.standard
   await prisma.transaction.create({
     data: {
       txHash: tx.txHash,
@@ -102,7 +149,9 @@ const deployAgent = asyncHandler(async (req, res) => {
       agentId: agent.agentId,
       callerWallet: req.walletAddress,
       ownerWallet: req.walletAddress,
-      totalAmount: '0',
+      totalAmount: listingFeeWei,
+      platformFee: listingFeeWei,
+      creatorAmount: '0',
     },
   })
 
@@ -112,7 +161,7 @@ const deployAgent = asyncHandler(async (req, res) => {
 // ── CONFIRM DEPLOY (SYNC CONTRACT ID) ──────────────────────
 
 const confirmDeploy = asyncHandler(async (req, res) => {
-  const { contractAgentId } = req.body
+  const { contractAgentId, txHash } = req.body
   const { id } = req.params
 
   const agent = await prisma.agent.update({
@@ -122,7 +171,8 @@ const confirmDeploy = asyncHandler(async (req, res) => {
     },
     data: {
       status: 'active',
-      contractAgentId: parseInt(contractAgentId),
+      contractAgentId: contractAgentId ? parseInt(contractAgentId) : undefined,
+      txHash: txHash || undefined,
       isVerified: true,
     },
   })
@@ -135,6 +185,12 @@ const confirmDeploy = asyncHandler(async (req, res) => {
     data: {
       status: 'confirmed',
     },
+  })
+
+  await prisma.globalStats.upsert({
+    where: { id: 'global' },
+    update: { activeAgents: { increment: 1 } },
+    create: { id: 'global', totalAgents: 1, activeAgents: 1, totalCalls: 0, totalRevenue: '0' },
   })
 
   res.json({ success: true, agent })
@@ -160,31 +216,36 @@ const cancelDraft = asyncHandler(async (req, res) => {
 
 const purchaseAccess = asyncHandler(async (req, res) => {
   const { agentId } = req.params
-  const { isLifetime } = req.body
+  const { isLifetime, txHash } = req.body
 
   const agent = await prisma.agent.findUnique({ where: { agentId } })
   if (!agent) return res.status(404).json({ error: 'Agent not found' })
 
-  const tx = await contractManager.purchaseAccess(
-    agent.contractAgentId,
-    isLifetime,
-    agent.pricing
-  )
-
-  if (!tx.success) {
-    return res.status(400).json({ error: tx.error })
+  // If txHash provided (blockchain flow), just record it
+  let finalTxHash = txHash
+  if (!finalTxHash) {
+    const tx = await contractManager.purchaseAccess(
+      agent.contractAgentId,
+      isLifetime,
+      agent.pricing
+    )
+    if (!tx.success) {
+      return res.status(400).json({ error: tx.error })
+    }
+    finalTxHash = tx.txHash
   }
 
   const totalCost = isLifetime
     ? (BigInt(agent.pricing) * 12n).toString()
     : agent.pricing
 
+  // 80% to creator, 20% to platform
   const platformFee = (BigInt(totalCost) * 20n / 100n).toString()
   const creatorAmount = (BigInt(totalCost) - BigInt(platformFee)).toString()
 
   await prisma.transaction.create({
     data: {
-      txHash: tx.txHash,
+      txHash: finalTxHash,
       type: 'purchase_access',
       status: 'confirmed',
       agentId: agent.agentId,
@@ -196,29 +257,69 @@ const purchaseAccess = asyncHandler(async (req, res) => {
     },
   })
 
-  res.json({ success: true })
+  // Record access in DB
+  await prisma.agentAccess.upsert({
+    where: {
+      agentId_userWallet: {
+        agentId: agent.agentId,
+        userWallet: req.walletAddress,
+      },
+    },
+    update: {
+      isLifetime: isLifetime || false,
+      expiresAt: isLifetime
+        ? new Date('9999-12-31')
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    },
+    create: {
+      agentId: agent.agentId,
+      userWallet: req.walletAddress,
+      isLifetime: isLifetime || false,
+      expiresAt: isLifetime
+        ? new Date('9999-12-31')
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    },
+  })
+
+  // Update agent revenue
+  await prisma.agent.update({
+    where: { id: agent.id },
+    data: {
+      revenue: (BigInt(agent.revenue || '0') + BigInt(creatorAmount)).toString(),
+    },
+  })
+
+  res.json({ success: true, txHash: finalTxHash })
 })
 
 // ── UPVOTE ────────────────────────────────────────────────
 
 const upvoteAgent = asyncHandler(async (req, res) => {
   const { agentId } = req.params
+  const { txHash } = req.body
 
   const agent = await prisma.agent.findUnique({ where: { agentId } })
   if (!agent) return res.status(404).json({ error: 'Agent not found' })
 
-  const tx = await contractManager.upvote(
-    agent.contractAgentId,
-    config.token.upvoteCostWei
-  )
+  if (agent.ownerWallet === req.walletAddress) {
+    return res.status(400).json({ error: 'Cannot upvote your own agent' })
+  }
 
-  if (!tx.success) {
-    return res.status(400).json({ error: tx.error })
+  let finalTxHash = txHash
+  if (!finalTxHash) {
+    const tx = await contractManager.upvote(
+      agent.contractAgentId,
+      config.token.upvoteCostWei
+    )
+    if (!tx.success) {
+      return res.status(400).json({ error: tx.error })
+    }
+    finalTxHash = tx.txHash
   }
 
   await prisma.transaction.create({
     data: {
-      txHash: tx.txHash,
+      txHash: finalTxHash,
       type: 'upvote',
       status: 'confirmed',
       agentId: agent.agentId,
@@ -226,7 +327,7 @@ const upvoteAgent = asyncHandler(async (req, res) => {
       ownerWallet: agent.ownerWallet,
       totalAmount: config.token.upvoteCostWei,
       platformFee: '0',
-      creatorAmount: config.token.upvoteCostWei,
+      creatorAmount: config.token.upvoteCostWei, // 100% to creator
     },
   })
 
@@ -234,10 +335,50 @@ const upvoteAgent = asyncHandler(async (req, res) => {
     where: { id: agent.id },
     data: {
       upvotes: { increment: 1 },
+      revenue: (BigInt(agent.revenue || '0') + BigInt(config.token.upvoteCostWei)).toString(),
     },
   })
 
-  res.json({ success: true })
+  res.json({ success: true, txHash: finalTxHash })
+})
+
+// ── CHECK ACCESS ──────────────────────────────────────────
+
+const checkAccess = asyncHandler(async (req, res) => {
+  const { agentId } = req.params
+  const walletAddress = req.walletAddress
+
+  const agent = await prisma.agent.findUnique({ where: { agentId } })
+  if (!agent) return res.status(404).json({ error: 'Agent not found' })
+
+  // Owner always has access
+  if (agent.ownerWallet === walletAddress) {
+    return res.json({ hasAccess: true, reason: 'owner' })
+  }
+
+  // Check DB access record
+  const access = await prisma.agentAccess.findUnique({
+    where: {
+      agentId_userWallet: {
+        agentId: agent.agentId,
+        userWallet: walletAddress,
+      },
+    },
+  })
+
+  if (access && (access.isLifetime || access.expiresAt > new Date())) {
+    return res.json({ hasAccess: true, reason: 'purchased', expiresAt: access.expiresAt })
+  }
+
+  // For blockchain agents, also check on-chain
+  if (agent.contractAgentId) {
+    const onChainAccess = await contractManager.hasAccess(agent.contractAgentId, walletAddress)
+    if (onChainAccess) {
+      return res.json({ hasAccess: true, reason: 'on-chain' })
+    }
+  }
+
+  res.json({ hasAccess: false })
 })
 
 // ── UPDATE / DELETE ───────────────────────────────────────
@@ -277,6 +418,7 @@ export {
   cancelDraft,
   purchaseAccess,
   upvoteAgent,
+  checkAccess,
   updateAgent,
   deleteAgent,
   validateEndpoint,

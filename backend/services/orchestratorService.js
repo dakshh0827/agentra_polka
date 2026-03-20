@@ -51,8 +51,9 @@ class OrchestratorService {
       }).catch(() => {})
     }
 
+    // FIXED: Use agent.agentId instead of agent.id
     const interactionRecord = await this._createInteractionRecord({
-      agentId: agent.id,
+      agentId: agent.agentId, 
       callerWallet,
       task,
       callDepth,
@@ -98,7 +99,8 @@ class OrchestratorService {
       latency,
     })
 
-    await agentService.recordExecution(agent.id, {
+    // FIXED: Use agent.agentId instead of agent.id
+    await agentService.recordExecution(agent.agentId, {
       success,
       latency,
     })
