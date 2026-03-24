@@ -46,7 +46,13 @@ app.use(
       : process.env.ALLOWED_ORIGINS?.split(',') || [],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-wallet-address'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-wallet-address',
+      'Cache-Control',
+      'Pragma'
+    ],
   })
 )
 
